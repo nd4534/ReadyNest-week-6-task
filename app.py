@@ -93,13 +93,22 @@ if mode == "👤 Single Instance What-If":
     col_controls, col_display = st.columns([1, 2])
 
     with col_controls:
-        st.subheader("⚙️ Profile Input")
-        credit_score = st.slider("Credit Score", 300, 850, int(X_train["Credit_Score"].mean()))
-        annual_income = st.slider("Annual Income ($)", 15000, 200000, int(X_train["Annual_Income"].mean()), step=5000)
-        debt_ratio = st.slider("Debt Ratio", 0.05, 0.95, float(X_train["Debt_Ratio"].mean()), step=0.01)
-        age = st.slider("Age", 18, 75, int(X_train["Age"].mean()))
-        open_lines = st.slider("Open Credit Lines", 1, 15, int(X_train["Open_Credit_Lines"].mean()))
-        late_payments = st.slider("Late Payments", 0, 10, int(X_train["Late_Payments"].mean()))
+        # Wrap input controls inside a Streamlit Form to prevent jittery instant-reruns
+        with st.form(key="profile_input_form"):
+            st.subheader("⚙️ Profile Input")
+            credit_score = st.slider("Credit Score", 300, 850, int(X_train["Credit_Score"].mean()))
+            annual_income = st.slider("Annual Income ($)", 15000, 200000, int(X_train["Annual_Income"].mean()), step=5000)
+            debt_ratio = st.slider("Debt Ratio", 0.05, 0.95, float(X_train["Debt_Ratio"].mean()), step=0.01)
+            age = st.slider("Age", 18, 75, int(X_train["Age"].mean()))
+            open_lines = st.slider("Open Credit Lines", 1, 15, int(X_train["Open_Credit_Lines"].mean()))
+            late_payments = st.slider("Late Payments", 0, 10, int(X_train["Late_Payments"].mean()))
+
+            # GO / Submit Button
+            submit_button = st.form_submit_button(
+                label="🚀 Evaluate Profile (GO)",
+                type="primary",
+                use_container_width=True
+            )
 
         input_data = {
             "Credit_Score": credit_score,
@@ -110,7 +119,12 @@ if mode == "👤 Single Instance What-If":
             "Late_Payments": late_payments
         }
 
-    prob, base_value, contributions = engine.explain_instance(input_data)
+    # Store evaluation state so metrics persist smoothly across interaction turns
+    if submit_button or "last_evaluated_data" not in st.session_state:
+        st.session_state.last_evaluated_data = input_data
+
+    # Always explain the currently confirmed input data
+    prob, base_value, contributions = engine.explain_instance(st.session_state.last_evaluated_data)
     risk_pct = prob * 100
 
     # Determine Risk Status & Color
@@ -160,7 +174,6 @@ if mode == "👤 Single Instance What-If":
         # Dynamic Automated Insights & Counterfactual Guidance
         st.markdown("### 💡 Automated Insights & Mitigation")
         
-        # Sort contributions to extract key drivers
         sorted_contribs = contributions.sort_values(by="SHAP_Value", ascending=False)
         top_risk_driver = sorted_contribs.iloc[0]
         top_mitigator = sorted_contribs.iloc[-1]
@@ -177,16 +190,17 @@ if mode == "👤 Single Instance What-If":
                 f"This strong attribute helped keep the overall risk score suppressed."
             )
 
-        # What-If Improvement Advice (if not already lowest risk)
+        # Path to Risk Reduction
         if risk_pct >= 30:
             st.markdown("#### 🎯 Path to Risk Reduction (Counterfactual Simulation)")
             advice_list = []
-            if debt_ratio > 0.35:
-                advice_list.append(f"• **Lower Debt Ratio**: Reducing debt ratio from `{debt_ratio:.2f}` to `<= 0.30` will significantly decrease risk.")
-            if late_payments > 0:
-                advice_list.append(f"• **Resolve Delinquencies**: Clearing late payments (currently `{late_payments}`) will remove a major risk penalty.")
-            if credit_score < 700:
-                advice_list.append(f"• **Improve Credit Score**: Raising score from `{credit_score}` to `700+` will shift profile into prime tier.")
+            curr_data = st.session_state.last_evaluated_data
+            if curr_data["Debt_Ratio"] > 0.35:
+                advice_list.append(f"• **Lower Debt Ratio**: Reducing debt ratio from `{curr_data['Debt_Ratio']:.2f}` to `<= 0.30` will significantly decrease risk.")
+            if curr_data["Late_Payments"] > 0:
+                advice_list.append(f"• **Resolve Delinquencies**: Clearing late payments (currently `{curr_data['Late_Payments']}`) will remove a major risk penalty.")
+            if curr_data["Credit_Score"] < 700:
+                advice_list.append(f"• **Improve Credit Score**: Raising score from `{curr_data['Credit_Score']}` to `700+` will shift profile into prime tier.")
 
             if advice_list:
                 for adv in advice_list:
