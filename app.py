@@ -54,8 +54,26 @@ st.caption("Batch risk evaluation, interactive XAI assistant, future trend forec
 @st.cache_resource
 def init_engine():
     model_obj, X_train, X_test, y_train, y_test = train_model()
+
+    # Define standard feature names expected by the model
+    feature_names = [
+        "Credit_Score",
+        "Annual_Income",
+        "Debt_Ratio",
+        "Age",
+        "Open_Credit_Lines",
+        "Late_Payments",
+    ]
+
+    # Guarantee X_train is a Pandas DataFrame with standard column names
+    if not isinstance(X_train, pd.DataFrame):
+        X_train = pd.DataFrame(X_train, columns=feature_names)
+    elif list(X_train.columns) != feature_names:
+        X_train.columns = feature_names
+
     engine = SHAPEngine(model_obj)
     return engine, X_train
+
 
 engine, X_train = init_engine()
 
