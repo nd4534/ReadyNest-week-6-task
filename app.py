@@ -94,10 +94,10 @@ if mode == "👤 Single Instance What-If":
     col_controls, col_display = st.columns([1, 2])
 
     with col_controls:
-        with st.form(key="profile_input_form"):
+        with st.form(key="profile_input_form", clear_on_submit=False):
             st.subheader("⚙️ Profile Input")
 
-            # Standard default values derived from training dataset mean
+            # Default slider values derived from training set averages
             credit_score = st.slider("Credit Score", 300, 850, int(X_train["Credit_Score"].mean()))
             annual_income = st.slider("Annual Income ($)", 15000, 200000, int(X_train["Annual_Income"].mean()), step=5000)
             debt_ratio = st.slider("Debt Ratio", 0.05, 0.95, float(X_train["Debt_Ratio"].mean()), step=0.01)
@@ -112,7 +112,7 @@ if mode == "👤 Single Instance What-If":
                 use_container_width=True
             )
 
-        # Trigger model execution ONLY when GO button is pressed
+        # FORCE RE-EVALUATION ON EVERY SINGLE CLICK
         if submit_button:
             current_input = {
                 "Credit_Score": credit_score,
@@ -122,25 +122,27 @@ if mode == "👤 Single Instance What-If":
                 "Open_Credit_Lines": open_lines,
                 "Late_Payments": late_payments
             }
-            # Explain instance dynamically
+            # Run model & SHAP explanation immediately
             prob, base_value, contributions = engine.explain_instance(current_input)
             
-            # Save evaluation payload directly in session state
+            # Store updated result in session state
             st.session_state["eval_results"] = {
                 "input_data": current_input,
                 "prob": prob,
                 "base_value": base_value,
                 "contributions": contributions
             }
+            # Force immediate rerun so UI re-renders with fresh data every time
+            st.rerun()
 
     with col_display:
         st.subheader("📊 Underwriting Decision & Attribution")
 
-        # 1. EMPTY STATE: User hasn't clicked GO yet
+        # 1. EMPTY STATE (First visit before pressing GO)
         if "eval_results" not in st.session_state:
             st.info("👈 **Configure applicant parameters on the left and click 'Evaluate Profile (GO)' to run risk scoring & SHAP attribution.**")
         
-        # 2. EVALUATED STATE: Render computed results directly from state
+        # 2. ACTIVE EVALUATION DISPLAY (Updates on every submit)
         else:
             res = st.session_state["eval_results"]
             prob = res["prob"]
@@ -149,7 +151,7 @@ if mode == "👤 Single Instance What-If":
             active_data = res["input_data"]
             risk_pct = prob * 100
 
-            # Determine Risk Status & Color
+            # Risk Status Tiering
             if risk_pct < 30:
                 status_label, status_color, status_icon = "LOW RISK - PRE-APPROVED", "green", "✅"
             elif risk_pct < 60:
@@ -157,13 +159,13 @@ if mode == "👤 Single Instance What-If":
             else:
                 status_label, status_color, status_icon = "HIGH RISK - DECLINE RECOMMENDED", "red", "🚨"
 
-            # Top Executive Metrics Row
+            # Top Metrics
             m1, m2, m3 = st.columns(3)
             m1.metric("Predicted Risk Score", f"{risk_pct:.1f}%")
             m2.metric("Portfolio Baseline", f"{base_value * 100:.1f}%")
             m3.metric("Decision Status", f"{status_icon} {status_label.split(' - ')[0]}")
 
-            # Risk Banner
+            # Banner
             if status_color == "green":
                 st.success(f"**Status:** {status_label} | Risk score is **{abs(base_value*100 - risk_pct):.1f}% lower** than portfolio average.")
             elif status_color == "orange":
@@ -171,7 +173,7 @@ if mode == "👤 Single Instance What-If":
             else:
                 st.error(f"**Status:** {status_label} | Exceeds risk threshold for standard approval.")
 
-            # SHAP Horizontal Bar Chart
+            # SHAP Bar Chart
             colors = ["#EF553B" if x > 0 else "#636EFA" for x in contributions["SHAP_Value"]]
             fig = go.Figure(go.Bar(
                 x=contributions["SHAP_Value"],
@@ -190,9 +192,8 @@ if mode == "👤 Single Instance What-If":
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            # Dynamic Automated Insights & Counterfactual Guidance
+            # Insights
             st.markdown("### 💡 Automated Insights & Mitigation")
-            
             sorted_contribs = contributions.sort_values(by="SHAP_Value", ascending=False)
             top_risk_driver = sorted_contribs.iloc[0]
             top_mitigator = sorted_contribs.iloc[-1]
@@ -209,7 +210,7 @@ if mode == "👤 Single Instance What-If":
                     f"This strong attribute helped keep the overall risk score suppressed."
                 )
 
-            # Path to Risk Reduction
+            # Advice
             if risk_pct >= 30:
                 st.markdown("#### 🎯 Path to Risk Reduction (Counterfactual Simulation)")
                 advice_list = []
