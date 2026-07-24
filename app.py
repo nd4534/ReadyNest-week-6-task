@@ -150,13 +150,13 @@ if mode == "👤 Single Instance What-If":
     with col_controls:
         st.subheader("⚙️ Profile Input")
 
-        # Sliders enforce realistic minimum bounds (prevents 0 values)
-        credit_score = st.slider("Credit Score", 300, 850, int(X_train["Credit_Score"].mean()))
-        annual_income = st.slider("Annual Income ($)", 15000, 200000, int(X_train["Annual_Income"].mean()), step=5000)
-        debt_ratio = st.slider("Debt Ratio", 0.05, 0.95, float(X_train["Debt_Ratio"].mean()), step=0.01)
-        age = st.slider("Age", 18, 75, int(X_train["Age"].mean()))
-        open_lines = st.slider("Open Credit Lines", 1, 15, int(X_train["Open_Credit_Lines"].mean()))
-        late_payments = st.slider("Late Payments", 0, 10, int(X_train["Late_Payments"].mean()))
+        # Explicit minimums > 0 prevent sliders from ever sitting at zero
+        credit_score = st.slider("Credit Score", min_value=300, max_value=850, value=int(X_train["Credit_Score"].mean()))
+        annual_income = st.slider("Annual Income ($)", min_value=15000, max_value=200000, value=int(X_train["Annual_Income"].mean()), step=5000)
+        debt_ratio = st.slider("Debt Ratio", min_value=0.05, max_value=0.95, value=float(X_train["Debt_Ratio"].mean()), step=0.01)
+        age = st.slider("Age", min_value=18, max_value=75, value=int(X_train["Age"].mean()))
+        open_lines = st.slider("Open Credit Lines", min_value=1, max_value=15, value=int(X_train["Open_Credit_Lines"].mean()))
+        late_payments = st.slider("Late Payments", min_value=0, max_value=10, value=int(X_train["Late_Payments"].mean()))
 
         active_data = {
             "Credit_Score": credit_score,
@@ -167,144 +167,149 @@ if mode == "👤 Single Instance What-If":
             "Late_Payments": late_payments
         }
 
-    # Always perform live inference for valid slider ranges
-    prob, base_value, contributions = engine.explain_instance(active_data)
-    risk_pct = prob * 100
-
-    # Sort contributions once for both insights and copilot
-    sorted_contribs = contributions.sort_values(by="SHAP_Value", ascending=False)
-    top_risk_driver = sorted_contribs.iloc[0]
-    top_mitigator = sorted_contribs.iloc[-1]
+    # Data Validation Check
+    has_valid_data = credit_score >= 300 and annual_income >= 15000 and age >= 18
 
     with col_display:
         st.subheader("📊 Underwriting Decision & Attribution")
 
-        # Risk Status Tiering
-        if risk_pct < 30:
-            status_label, status_color, status_icon = "LOW RISK - PRE-APPROVED", "green", "✅"
-        elif risk_pct < 60:
-            status_label, status_color, status_icon = "MEDIUM RISK - MANUAL REVIEW", "orange", "⚠️"
+        if not has_valid_data:
+            st.warning("⚠️ **No Data Provided**: Adjust the sliders on the left to set applicant profile values and run real-time evaluation.")
         else:
-            status_label, status_color, status_icon = "HIGH RISK - DECLINE RECOMMENDED", "red", "🚨"
+            # Live Inference & SHAP Calculation
+            prob, base_value, contributions = engine.explain_instance(active_data)
+            risk_pct = prob * 100
 
-        # Executive Metrics Row
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Predicted Risk Score", f"{risk_pct:.1f}%")
-        m2.metric("Portfolio Baseline", f"{base_value * 100:.1f}%")
-        m3.metric("Decision Status", f"{status_icon} {status_label.split(' - ')[0]}")
+            sorted_contribs = contributions.sort_values(by="SHAP_Value", ascending=False)
+            top_risk_driver = sorted_contribs.iloc[0]
+            top_mitigator = sorted_contribs.iloc[-1]
 
-        # Status Banner
-        if status_color == "green":
-            st.success(f"**Status:** {status_label} | Risk score is **{abs(base_value*100 - risk_pct):.1f}% lower** than portfolio average.")
-        elif status_color == "orange":
-            st.warning(f"**Status:** {status_label} | Elevated risk requires secondary underwriting review.")
-        else:
-            st.error(f"**Status:** {status_label} | Exceeds risk threshold for standard approval.")
-
-        # SHAP Horizontal Bar Chart
-        colors = ["#EF553B" if x > 0 else "#636EFA" for x in contributions["SHAP_Value"]]
-        fig = go.Figure(go.Bar(
-            x=contributions["SHAP_Value"],
-            y=contributions["Feature"],
-            orientation='h',
-            marker_color=colors,
-            text=[f"{val:+.3f}" for val in contributions["SHAP_Value"]],
-            textposition="outside"
-        ))
-        fig.update_layout(
-            title="Feature Impact Breakdown (SHAP Values)",
-            xaxis_title="Impact on Risk Probability (+ Increases Risk, - Decreases Risk)",
-            yaxis=dict(autorange="reversed"),
-            height=300,
-            margin=dict(l=20, r=20, t=40, b=20)
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Dynamic Automated Insights
-        st.markdown("### 💡 Automated Insights & Mitigation")
-
-        c_ins1, c_ins2 = st.columns(2)
-        with c_ins1:
-            st.info(
-                f"**Primary Risk Driver:** `{top_risk_driver['Feature']}` (+{top_risk_driver['SHAP_Value']:.3f})\n\n"
-                f"This factor contributed the most toward pushing the applicant's risk score up."
-            )
-        with c_ins2:
-            st.info(
-                f"**Primary Mitigating Factor:** `{top_mitigator['Feature']}` ({top_mitigator['SHAP_Value']:.3f})\n\n"
-                f"This strong attribute helped keep the overall risk score suppressed."
-            )
-
-        # Actionable Guidance
-        if risk_pct >= 30:
-            st.markdown("#### 🎯 Path to Risk Reduction (Counterfactual Simulation)")
-            advice_list = []
-            if active_data["Debt_Ratio"] > 0.35:
-                advice_list.append(f"• **Lower Debt Ratio**: Reducing debt ratio from `{active_data['Debt_Ratio']:.2f}` to `<= 0.30` will significantly decrease risk.")
-            if active_data["Late_Payments"] > 0:
-                advice_list.append(f"• **Resolve Delinquencies**: Clearing late payments (currently `{active_data['Late_Payments']}`) will remove a major risk penalty.")
-            if active_data["Credit_Score"] < 700:
-                advice_list.append(f"• **Improve Credit Score**: Raising score from `{active_data['Credit_Score']}` to `700+` will shift profile into prime tier.")
-
-            if advice_list:
-                for adv in advice_list:
-                    st.write(adv)
+            # Risk Status Tiering
+            if risk_pct < 30:
+                status_label, status_color, status_icon = "LOW RISK - PRE-APPROVED", "green", "✅"
+            elif risk_pct < 60:
+                status_label, status_color, status_icon = "MEDIUM RISK - MANUAL REVIEW", "orange", "⚠️"
             else:
-                st.write("• Increasing annual income or establishing longer credit history will further improve approval terms.")
+                status_label, status_color, status_icon = "HIGH RISK - DECLINE RECOMMENDED", "red", "🚨"
+
+            # Executive Metrics Row
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Predicted Risk Score", f"{risk_pct:.1f}%")
+            m2.metric("Portfolio Baseline", f"{base_value * 100:.1f}%")
+            m3.metric("Decision Status", f"{status_icon} {status_label.split(' - ')[0]}")
+
+            # Status Banner
+            if status_color == "green":
+                st.success(f"**Status:** {status_label} | Risk score is **{abs(base_value*100 - risk_pct):.1f}% lower** than portfolio average.")
+            elif status_color == "orange":
+                st.warning(f"**Status:** {status_label} | Elevated risk requires secondary underwriting review.")
+            else:
+                st.error(f"**Status:** {status_label} | Exceeds risk threshold for standard approval.")
+
+            # SHAP Horizontal Bar Chart
+            colors = ["#EF553B" if x > 0 else "#636EFA" for x in contributions["SHAP_Value"]]
+            fig = go.Figure(go.Bar(
+                x=contributions["SHAP_Value"],
+                y=contributions["Feature"],
+                orientation='h',
+                marker_color=colors,
+                text=[f"{val:+.3f}" for val in contributions["SHAP_Value"]],
+                textposition="outside"
+            ))
+            fig.update_layout(
+                title="Feature Impact Breakdown (SHAP Values)",
+                xaxis_title="Impact on Risk Probability (+ Increases Risk, - Decreases Risk)",
+                yaxis=dict(autorange="reversed"),
+                height=300,
+                margin=dict(l=20, r=20, t=40, b=20)
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Dynamic Automated Insights
+            st.markdown("### 💡 Automated Insights & Mitigation")
+            c_ins1, c_ins2 = st.columns(2)
+            with c_ins1:
+                st.info(
+                    f"**Primary Risk Driver:** `{top_risk_driver['Feature']}` (+{top_risk_driver['SHAP_Value']:.3f})\n\n"
+                    f"This factor contributed the most toward pushing the applicant's risk score up."
+                )
+            with c_ins2:
+                st.info(
+                    f"**Primary Mitigating Factor:** `{top_mitigator['Feature']}` ({top_mitigator['SHAP_Value']:.3f})\n\n"
+                    f"This strong attribute helped keep the overall risk score suppressed."
+                )
+
+            # Actionable Guidance
+            if risk_pct >= 30:
+                st.markdown("#### 🎯 Path to Risk Reduction (Counterfactual Simulation)")
+                advice_list = []
+                if active_data["Debt_Ratio"] > 0.35:
+                    advice_list.append(f"• **Lower Debt Ratio**: Reducing debt ratio from `{active_data['Debt_Ratio']:.2f}` to `<= 0.30` will significantly decrease risk.")
+                if active_data["Late_Payments"] > 0:
+                    advice_list.append(f"• **Resolve Delinquencies**: Clearing late payments (currently `{active_data['Late_Payments']}`) will remove a major risk penalty.")
+                if active_data["Credit_Score"] < 700:
+                    advice_list.append(f"• **Improve Credit Score**: Raising score from `{active_data['Credit_Score']}` to `700+` will shift profile into prime tier.")
+
+                if advice_list:
+                    for adv in advice_list:
+                        st.write(adv)
+                else:
+                    st.write("• Increasing annual income or establishing longer credit history will further improve approval terms.")
 
     # ---------------------------------------------------------
     # Single-Instance Local/Cloud XAI Copilot
     # ---------------------------------------------------------
-    st.markdown("---")
-    st.subheader("🤖 Single Applicant Copilot (Powered by Groq / Qwen)")
-    st.write("Ask questions about this specific profile or generate an underwriter summary note:")
+    if has_valid_data:
+        st.markdown("---")
+        st.subheader("🤖 Single Applicant Copilot (Powered by Groq / Qwen)")
+        st.write("Ask questions about this specific profile or generate an underwriter summary note:")
 
-    if "single_chat_history" not in st.session_state:
-        st.session_state.single_chat_history = []
+        if "single_chat_history" not in st.session_state:
+            st.session_state.single_chat_history = []
 
-    for msg in st.session_state.single_chat_history:
-        st.chat_message(msg["role"]).write(msg["content"])
+        for msg in st.session_state.single_chat_history:
+            st.chat_message(msg["role"]).write(msg["content"])
 
-    single_query = st.chat_input("e.g., Draft an approval memorandum or explain why this profile was flagged...")
+        single_query = st.chat_input("e.g., Draft an approval memorandum or explain why this profile was flagged...")
 
-    if single_query:
-        st.session_state.single_chat_history.append({"role": "user", "content": single_query})
-        st.chat_message("user").write(single_query)
+        if single_query:
+            st.session_state.single_chat_history.append({"role": "user", "content": single_query})
+            st.chat_message("user").write(single_query)
 
-        single_system_prompt = f"""
-            You are an expert Chief Risk Officer (CRO) and Loan Underwriter AI assistant.
-            
-            APPLICANT PROFILE:
-            - Credit Score: {credit_score}
-            - Annual Income: ${annual_income:,}
-            - Debt Ratio: {debt_ratio:.2f}
-            - Age: {age}
-            - Open Credit Lines: {open_lines}
-            - Late Payments: {late_payments}
-            - Predicted Risk Score: {risk_pct:.1f}% (Baseline: {base_value*100:.1f}%)
-            - Top Risk Driver: {top_risk_driver['Feature']}
-            - Top Mitigating Factor: {top_mitigator['Feature']}
+            single_system_prompt = f"""
+                You are an expert Chief Risk Officer (CRO) and Loan Underwriter AI assistant.
+                
+                APPLICANT PROFILE:
+                - Credit Score: {credit_score}
+                - Annual Income: ${annual_income:,}
+                - Debt Ratio: {debt_ratio:.2f}
+                - Age: {age}
+                - Open Credit Lines: {open_lines}
+                - Late Payments: {late_payments}
+                - Predicted Risk Score: {risk_pct:.1f}% (Baseline: {base_value*100:.1f}%)
+                - Top Risk Driver: {top_risk_driver['Feature']}
+                - Top Mitigating Factor: {top_mitigator['Feature']}
 
-            STRICT INSTRUCTIONS:
-            - Answer questions regarding this specific applicant directly and professionally.
-            - Keep responses concise, objective, and actionable.
-        """
+                STRICT INSTRUCTIONS:
+                - Answer questions regarding this specific applicant directly and professionally.
+                - Keep responses concise, objective, and actionable.
+            """
 
-        messages = [{"role": "system", "content": single_system_prompt}]
-        for m in st.session_state.single_chat_history[-6:]:
-            messages.append({"role": m["role"], "content": m["content"]})
+            messages = [{"role": "system", "content": single_system_prompt}]
+            for m in st.session_state.single_chat_history[-6:]:
+                messages.append({"role": m["role"], "content": m["content"]})
 
-        with st.chat_message("assistant"):
-            response_placeholder = st.empty()
-            full_response = ""
+            with st.chat_message("assistant"):
+                response_placeholder = st.empty()
+                full_response = ""
 
-            for chunk in generate_llm_response(messages, temperature=0.3):
-                full_response += chunk
-                response_placeholder.markdown(full_response + "▌")
+                for chunk in generate_llm_response(messages, temperature=0.3):
+                    full_response += chunk
+                    response_placeholder.markdown(full_response + "▌")
 
-            response_placeholder.markdown(full_response)
+                response_placeholder.markdown(full_response)
 
-        st.session_state.single_chat_history.append({"role": "assistant", "content": full_response})
+            st.session_state.single_chat_history.append({"role": "assistant", "content": full_response})
 
 # ==========================================
 # MODE 2: MASS DATA BATCH EVALUATION
