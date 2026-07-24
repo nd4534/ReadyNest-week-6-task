@@ -435,7 +435,7 @@ else:
             with c2:
                 # 1. Sample up to 5,000 records for fast, clean rendering on 100k datasets
                 scatter_sample_df = (
-                    batch_df.sample(n=5000, random_state=42)
+                    batch_df.sample(n=1000, random_state=42)
                     if len(batch_df) > 5000
                     else batch_df
                 )
