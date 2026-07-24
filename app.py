@@ -364,7 +364,7 @@ else:
     if uploaded_file is not None:
         batch_df = pd.read_csv(uploaded_file)
         
-        # Kaggle Auto-Mapper
+        # Expanded Kaggle/Standard Auto-Mapper
         kaggle_mapper = {
             "person_age": "Age", "person_income": "Annual_Income",
             "loan_int_rate": "Debt_Ratio", "cb_person_cred_hist_length": "Open_Credit_Lines",
@@ -373,8 +373,14 @@ else:
             "open_acc": "Open_Credit_Lines", "delinq_2yrs": "Late_Payments"
         }
         batch_df = batch_df.rename(columns=kaggle_mapper)
+        
+        # Ensure default synthetic values for missing model features
         if "Credit_Score" not in batch_df.columns:
             batch_df["Credit_Score"] = 680
+        if "Open_Credit_Lines" not in batch_df.columns:
+            batch_df["Open_Credit_Lines"] = 4
+        if "Late_Payments" not in batch_df.columns:
+            batch_df["Late_Payments"] = 0
 
         required_cols = ["Credit_Score", "Annual_Income", "Debt_Ratio", "Age", "Open_Credit_Lines", "Late_Payments"]
         
@@ -385,19 +391,27 @@ else:
             probs = engine.model.predict_proba(batch_df[required_cols])[:, 1]
             batch_df["Predicted_Risk_Score"] = np.round(probs * 100, 2)
             
-            # Adjusted Tiering Thresholds (<30% Low, 30-50% Medium, >50% High)
-            batch_df["Risk_Category"] = pd.cut(
-                batch_df["Predicted_Risk_Score"], 
-                bins=[-1, 30, 50, 100], 
-                labels=["Low Risk", "Medium Risk", "High Risk"]
-            )
+            # Use dynamic quantile binning (qcut) to populate Low, Medium, and High Risk categories evenly
+            try:
+                batch_df["Risk_Category"] = pd.qcut(
+                    batch_df["Predicted_Risk_Score"], 
+                    q=3, 
+                    labels=["Low Risk", "Medium Risk", "High Risk"]
+                )
+            except ValueError:
+                # Fallback to standard cut if duplicates prevent qcut
+                batch_df["Risk_Category"] = pd.cut(
+                    batch_df["Predicted_Risk_Score"], 
+                    bins=[-1, 35, 55, 100], 
+                    labels=["Low Risk", "Medium Risk", "High Risk"]
+                )
 
             # High-Level Metrics
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total Records Evaluated", len(batch_df))
+            col1.metric("Total Records Evaluated", f"{len(batch_df):,}")
             col2.metric("Average Portfolio Risk", f"{batch_df['Predicted_Risk_Score'].mean():.1f}%")
-            col3.metric("High-Risk Applicants", f"{(batch_df['Risk_Category'] == 'High Risk').sum()}")
-            col4.metric("Low-Risk Applicants", f"{(batch_df['Risk_Category'] == 'Low Risk').sum()}")
+            col3.metric("High-Risk Applicants", f"{(batch_df['Risk_Category'] == 'High Risk').sum():,}")
+            col4.metric("Low-Risk Applicants", f"{(batch_df['Risk_Category'] == 'Low Risk').sum():,}")
 
             st.markdown("---")
             
@@ -413,7 +427,8 @@ else:
                 fig_dist = px.histogram(
                     batch_df, x="Predicted_Risk_Score", color="Risk_Category",
                     title="Portfolio Risk Score Distribution",
-                    color_discrete_map=risk_color_map
+                    color_discrete_map=risk_color_map,
+                    category_orders={"Risk_Category": ["Low Risk", "Medium Risk", "High Risk"]}
                 )
                 st.plotly_chart(fig_dist, use_container_width=True)
             
@@ -421,7 +436,8 @@ else:
                 fig_scatter = px.scatter(
                     batch_df, x="Credit_Score", y="Annual_Income", color="Risk_Category", size="Late_Payments",
                     title="Credit Score vs Income by Risk Category",
-                    color_discrete_map=risk_color_map
+                    color_discrete_map=risk_color_map,
+                    category_orders={"Risk_Category": ["Low Risk", "Medium Risk", "High Risk"]}
                 )
                 st.plotly_chart(fig_scatter, use_container_width=True)
 
