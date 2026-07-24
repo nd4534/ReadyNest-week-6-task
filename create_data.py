@@ -9,7 +9,7 @@ csv_path = data_dir / "credit_risk.csv"
 
 # Generate synthetic dataset matching our schema
 np.random.seed(42)
-n_samples = 1000
+n_samples = 100000
 
 df = pd.DataFrame({
     'Credit_Score': np.random.randint(300, 850, n_samples),

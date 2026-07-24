@@ -13,16 +13,23 @@ MODEL_PATH = ROOT_DIR / "models" / "credit_risk_rf.joblib"
 
 def train_and_save_model():
     X_train, X_test, y_train, y_test = load_and_prep_data()
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    
+    # max_depth=12 and max_samples prevent unconstrained leaf growth on 100k rows
+    model = RandomForestClassifier(
+        n_estimators=100, 
+        max_depth=12, 
+        max_samples=0.8,
+        random_state=42,
+        n_jobs=-1
+    )
     model.fit(X_train, y_train)
     
-    # Save the trained model to the models/ directory
+    # Save with compress=3 to keep file size well under GitHub's 100MB limit
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, MODEL_PATH)
+    joblib.dump(model, MODEL_PATH, compress=3)
     print(f"[SUCCESS] Model saved to {MODEL_PATH}")
     
     return model, X_train, X_test, y_train, y_test
-train_model = train_and_save_model
 
 def load_saved_model():
     """Fast load for Streamlit app"""
