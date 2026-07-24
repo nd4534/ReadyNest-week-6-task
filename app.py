@@ -148,66 +148,40 @@ if mode == "👤 Single Instance What-If":
     col_controls, col_display = st.columns([1, 2])
 
     with col_controls:
-        st.subheader("⚙️ Profile Input")
+        # Wrap sliders in st.form to keep the GO button
+        with st.form(key="profile_input_form"):
+            st.subheader("⚙️ Profile Input")
 
-        # Sliders directly trigger real-time updates on drag
-        credit_score = st.slider(
-            "Credit Score", 
-            300, 
-            850, 
-            int(X_train["Credit_Score"].mean())
-        )
-        annual_income = st.slider(
-            "Annual Income ($)", 
-            15000, 
-            200000, 
-            int(X_train["Annual_Income"].mean()), 
-            step=5000
-        )
-        debt_ratio = st.slider(
-            "Debt Ratio", 
-            0.05, 
-            0.95, 
-            float(X_train["Debt_Ratio"].mean()), 
-            step=0.01
-        )
-        age = st.slider(
-            "Age", 
-            18, 
-            75, 
-            int(X_train["Age"].mean())
-        )
-        open_lines = st.slider(
-            "Open Credit Lines", 
-            1, 
-            15, 
-            int(X_train["Open_Credit_Lines"].mean())
-        )
-        late_payments = st.slider(
-            "Late Payments", 
-            0, 
-            10, 
-            int(X_train["Late_Payments"].mean())
-        )
+            credit_score = st.slider("Credit Score", 300, 850, int(X_train["Credit_Score"].mean()))
+            annual_income = st.slider("Annual Income ($)", 15000, 200000, int(X_train["Annual_Income"].mean()), step=5000)
+            debt_ratio = st.slider("Debt Ratio", 0.05, 0.95, float(X_train["Debt_Ratio"].mean()), step=0.01)
+            age = st.slider("Age", 18, 75, int(X_train["Age"].mean()))
+            open_lines = st.slider("Open Credit Lines", 1, 15, int(X_train["Open_Credit_Lines"].mean()))
+            late_payments = st.slider("Late Payments", 0, 10, int(X_train["Late_Payments"].mean()))
 
-        active_data = {
-            "Credit_Score": credit_score,
-            "Annual_Income": annual_income,
-            "Debt_Ratio": debt_ratio,
-            "Age": age,
-            "Open_Credit_Lines": open_lines,
-            "Late_Payments": late_payments
-        }
+            # GO Button inside the form
+            submitted = st.form_submit_button("🚀 Evaluate Profile (GO)", type="primary", use_container_width=True)
 
-    # Input Validation Guard: Check that core fields have actual values
-    has_valid_data = credit_score > 0 and annual_income > 0 and age > 0
+        # Store submitted values into active_data
+        if submitted:
+            st.session_state["active_profile"] = {
+                "Credit_Score": credit_score,
+                "Annual_Income": annual_income,
+                "Debt_Ratio": debt_ratio,
+                "Age": age,
+                "Open_Credit_Lines": open_lines,
+                "Late_Payments": late_payments
+            }
 
     with col_display:
         st.subheader("📊 Underwriting Decision & Attribution")
 
-        if not has_valid_data:
-            st.info("👈 Please enter valid applicant data using the controls on the left to show evaluation results.")
+        # Validation Guard: Only evaluate if GO button was clicked & profile exists in session state
+        if "active_profile" not in st.session_state:
+            st.info("👈 Adjust the applicant profile parameters on the left and click **🚀 Evaluate Profile (GO)** to run the model.")
         else:
+            active_data = st.session_state["active_profile"]
+
             # Live Inference & SHAP Calculation
             prob, base_value, contributions = engine.explain_instance(active_data)
             risk_pct = prob * 100
@@ -291,7 +265,7 @@ if mode == "👤 Single Instance What-If":
     # ---------------------------------------------------------
     # Single-Instance Local/Cloud XAI Copilot
     # ---------------------------------------------------------
-    if has_valid_data:
+    if "active_profile" in st.session_state:
         st.markdown("---")
         st.subheader("🤖 Single Applicant Copilot (Powered by Groq / Qwen)")
         st.write("Ask questions about this specific profile or generate an underwriter summary note:")
@@ -299,7 +273,6 @@ if mode == "👤 Single Instance What-If":
         if "single_chat_history" not in st.session_state:
             st.session_state.single_chat_history = []
 
-        # Display conversation history
         for msg in st.session_state.single_chat_history:
             st.chat_message(msg["role"]).write(msg["content"])
 
@@ -309,16 +282,18 @@ if mode == "👤 Single Instance What-If":
             st.session_state.single_chat_history.append({"role": "user", "content": single_query})
             st.chat_message("user").write(single_query)
 
+            active_data = st.session_state["active_profile"]
+
             single_system_prompt = f"""
                 You are an expert Chief Risk Officer (CRO) and Loan Underwriter AI assistant.
                 
                 APPLICANT PROFILE:
-                - Credit Score: {credit_score}
-                - Annual Income: ${annual_income:,}
-                - Debt Ratio: {debt_ratio:.2f}
-                - Age: {age}
-                - Open Credit Lines: {open_lines}
-                - Late Payments: {late_payments}
+                - Credit Score: {active_data['Credit_Score']}
+                - Annual Income: ${active_data['Annual_Income']:,}
+                - Debt Ratio: {active_data['Debt_Ratio']:.2f}
+                - Age: {active_data['Age']}
+                - Open Credit Lines: {active_data['Open_Credit_Lines']}
+                - Late Payments: {active_data['Late_Payments']}
                 - Predicted Risk Score: {risk_pct:.1f}% (Baseline: {base_value*100:.1f}%)
                 - Top Risk Driver: {top_risk_driver['Feature']}
                 - Top Mitigating Factor: {top_mitigator['Feature']}
