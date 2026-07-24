@@ -12,7 +12,18 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import time
-import ollama
+
+# Groq Cloud API Import
+try:
+    from groq import Groq
+except ImportError:
+    Groq = None
+
+# Ollama Fallback Import
+try:
+    import ollama
+except ImportError:
+    ollama = None
 
 # Clean module imports with fallback handling for train_model vs train_and_save_model
 from src.data_loader import load_and_prep_data
@@ -76,6 +87,49 @@ def init_engine():
 
 
 engine, X_train = init_engine()
+
+# Helper function to stream LLM responses (Groq Cloud primary, Ollama Local fallback)
+def generate_llm_response(messages, temperature=0.3):
+    groq_api_key = st.secrets.get("GROQ_API_KEY", None)
+
+    # 1. Try Groq Cloud API
+    if groq_api_key and Groq is not None:
+        try:
+            client = Groq(api_key=groq_api_key)
+            completion = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=messages,
+                temperature=temperature,
+                stream=True,
+            )
+            for chunk in completion:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+            return
+        except Exception as e:
+            yield f"\n⚠️ **Groq API Error**: {str(e)}\nAttempting local fallback..."
+
+    # 2. Try Local Ollama Fallback
+    if ollama is not None:
+        try:
+            stream = ollama.chat(
+                model="qwen2.5:7b",
+                messages=messages,
+                options={"temperature": temperature, "num_ctx": 4096},
+                stream=True
+            )
+            for chunk in stream:
+                yield chunk['message']['content']
+            return
+        except Exception as e:
+            yield (
+                "\n⚠️ **Copilot Unavailable on Cloud**: Streamlit Cloud does not host local LLM instances. "
+                "Please configure `GROQ_API_KEY` in Streamlit App Secrets (`Settings > Secrets`) to enable live response generation."
+            )
+            return
+
+    yield "⚠️ No suitable LLM backend found. Please install `groq` or configure `GROQ_API_KEY` in Streamlit secrets."
+
 
 # Select Mode
 mode = st.radio(
@@ -239,10 +293,10 @@ if mode == "👤 Single Instance What-If":
                 st.write("• Increasing annual income or establishing longer credit history will further improve approval terms.")
 
     # ---------------------------------------------------------
-    # Single-Instance Local XAI Copilot
+    # Single-Instance Local/Cloud XAI Copilot
     # ---------------------------------------------------------
     st.markdown("---")
-    st.subheader("🤖 Single Applicant Copilot (Powered by Qwen 2.5:7b)")
+    st.subheader("🤖 Single Applicant Copilot (Powered by Groq / Qwen)")
     st.write("Ask questions about this specific profile or generate an underwriter summary note:")
 
     if "single_chat_history" not in st.session_state:
@@ -277,35 +331,19 @@ if mode == "👤 Single Instance What-If":
             - Keep responses concise, objective, and actionable.
         """
 
-        messages_for_ollama = [{"role": "system", "content": single_system_prompt}]
+        messages = [{"role": "system", "content": single_system_prompt}]
         for m in st.session_state.single_chat_history[-6:]:
-            messages_for_ollama.append({"role": m["role"], "content": m["content"]})
+            messages.append({"role": m["role"], "content": m["content"]})
 
         with st.chat_message("assistant"):
             response_placeholder = st.empty()
             full_response = ""
 
-            try:
-                stream = ollama.chat(
-                    model="qwen2.5:7b",
-                    messages=messages_for_ollama,
-                    options={"temperature": 0.3, "num_ctx": 4096},
-                    stream=True
-                )
+            for chunk in generate_llm_response(messages, temperature=0.3):
+                full_response += chunk
+                response_placeholder.markdown(full_response + "▌")
 
-                for chunk in stream:
-                    full_response += chunk['message']['content']
-                    response_placeholder.markdown(full_response + "▌")
-
-                response_placeholder.markdown(full_response)
-
-            except Exception as e:
-                full_response = (
-                    "⚠️ **Copilot Unavailable on Cloud**: This dashboard is hosted on Streamlit Cloud, "
-                    "which does not host local LLM instances. To use the AI Copilot, please run the "
-                    "app locally with Ollama active (`ollama serve`), or configure a cloud LLM API key."
-                )
-                response_placeholder.warning(full_response)
+            response_placeholder.markdown(full_response)
 
         st.session_state.single_chat_history.append({"role": "assistant", "content": full_response})
 
@@ -343,8 +381,8 @@ else:
         if not all(col in batch_df.columns for col in required_cols):
             st.error(f"Uploaded CSV must contain required columns: {required_cols}")
         else:
-            # Batch Inference
-            probs = engine.model.predict_proba(batch_df[required_cols])[:, 1]
+            # Batch Inference (Class 0 targeted for default/risk calculation)
+            probs = engine.model.predict_proba(batch_df[required_cols])[:, 0]
             batch_df["Predicted_Risk_Score"] = np.round(probs * 100, 2)
             batch_df["Risk_Category"] = pd.cut(
                 batch_df["Predicted_Risk_Score"], 
@@ -380,14 +418,14 @@ else:
 
             # 🔮 FUTURE PREDICTIONS & PROJECTIONS MODULE
             st.markdown("---")
-            st.subheader("🤖 Local XAI Copilot (Powered by Qwen 2.5:7b)")
+            st.subheader("🤖 Local/Cloud XAI Copilot (Powered by Groq / Qwen)")
             st.write("Ask complex underwriting, policy, or risk-mitigation questions:")
 
             if "chat_history" not in st.session_state:
                 st.session_state.chat_history = [
                     {
                         "role": "assistant",
-                        "content": f"Hello! I am running locally using **Qwen 2.5 (7B)**. I have analyzed your dataset of **{len(batch_df):,}** records with an average risk of **{batch_df['Predicted_Risk_Score'].mean():.1f}%**. How can I assist with your risk management strategy?"
+                        "content": f"Hello! I have analyzed your dataset of **{len(batch_df):,}** records with an average risk of **{batch_df['Predicted_Risk_Score'].mean():.1f}%**. How can I assist with your risk management strategy?"
                     }
                 ]
 
@@ -437,47 +475,30 @@ else:
                         1. NEVER repeat or restructure information within the same response (e.g., do NOT list items 1-10 and then re-list them as Short/Medium/Long term).
                         2. Pick ONLY the top 3 most high-impact recommendations for this specific dataset and list them ONCE.
                         3. Be direct, concise, and punchy. Cut out fluff, intro warm-ups, and duplicative summaries.
-                        """
+                    """
                 else:
                     system_prompt = """
-                    You are an expert Chief Risk Officer (CRO) AI assistant for a Credit Risk Analysis Dashboard.
-                    Be helpful, professional, and conversational.
+                        You are an expert Chief Risk Officer (CRO) AI assistant for a Credit Risk Analysis Dashboard.
+                        Be helpful, professional, and conversational.
                     """
 
                 # 3. Include broader conversation history so the model knows what it already said
                 recent_history = st.session_state.chat_history[-8:]
-                messages_for_ollama = [{"role": "system", "content": system_prompt}]
+                messages = [{"role": "system", "content": system_prompt}]
                 for m in recent_history:
-                    messages_for_ollama.append({"role": m["role"], "content": m["content"]})
+                    messages.append({"role": m["role"], "content": m["content"]})
 
                 # 4. Stream response with dynamic temperature
                 with st.chat_message("assistant"):
                     response_placeholder = st.empty()
                     full_response = ""
+                    temp = 0.6 if is_asking_more else 0.3
 
-                    try:
-                        options = {
-                            "num_ctx": 4096,
-                            "temperature": 0.6 if is_asking_more else 0.3,
-                            "top_p": 0.9
-                        }
+                    for chunk in generate_llm_response(messages, temperature=temp):
+                        full_response += chunk
+                        response_placeholder.markdown(full_response + "▌")
 
-                        stream = ollama.chat(
-                            model="qwen2.5:7b",
-                            messages=messages_for_ollama,
-                            options=options,
-                            stream=True
-                        )
-
-                        for chunk in stream:
-                            full_response += chunk['message']['content']
-                            response_placeholder.markdown(full_response + "▌")
-
-                        response_placeholder.markdown(full_response)
-
-                    except Exception as e:
-                        full_response = f"⚠️ Error communicating with local Ollama: {str(e)}"
-                        response_placeholder.error(full_response)
+                    response_placeholder.markdown(full_response)
 
                 st.session_state.chat_history.append({"role": "assistant", "content": full_response})
 
