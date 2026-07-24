@@ -145,76 +145,66 @@ st.markdown("---")
 # ==========================================
 if mode == "👤 Single Instance What-If":
 
-    # 1. Define ideal Low-Risk Default Values
-    low_risk_defaults = {
-        "Credit_Score": 780,
-        "Annual_Income": 120000,
-        "Debt_Ratio": 0.15,
-        "Age": 42,
-        "Open_Credit_Lines": 4,
-        "Late_Payments": 0
-    }
-
-    # 2. Automatically compute & load low-risk results on fresh page visit
-    if "eval_results" not in st.session_state:
-        prob, base_value, contributions = engine.explain_instance(low_risk_defaults)
-        st.session_state["eval_results"] = {
-            "input_data": low_risk_defaults,
-            "prob": prob,
-            "base_value": base_value,
-            "contributions": contributions
-        }
-
     col_controls, col_display = st.columns([1, 2])
 
     with col_controls:
-        with st.form(key="profile_input_form", clear_on_submit=False):
-            st.subheader("⚙️ Profile Input")
+        st.subheader("⚙️ Profile Input")
 
-            # Form Sliders initialized with Low Risk defaults
-            credit_score = st.slider("Credit Score", 300, 850, low_risk_defaults["Credit_Score"])
-            annual_income = st.slider("Annual Income ($)", 15000, 200000, low_risk_defaults["Annual_Income"], step=5000)
-            debt_ratio = st.slider("Debt Ratio", 0.05, 0.95, low_risk_defaults["Debt_Ratio"], step=0.01)
-            age = st.slider("Age", 18, 75, low_risk_defaults["Age"])
-            open_lines = st.slider("Open Credit Lines", 1, 15, low_risk_defaults["Open_Credit_Lines"])
-            late_payments = st.slider("Late Payments", 0, 10, low_risk_defaults["Late_Payments"])
+        # Sliders directly trigger real-time updates on drag
+        credit_score = st.slider(
+            "Credit Score", 
+            300, 
+            850, 
+            int(X_train["Credit_Score"].mean())
+        )
+        annual_income = st.slider(
+            "Annual Income ($)", 
+            15000, 
+            200000, 
+            int(X_train["Annual_Income"].mean()), 
+            step=5000
+        )
+        debt_ratio = st.slider(
+            "Debt Ratio", 
+            0.05, 
+            0.95, 
+            float(X_train["Debt_Ratio"].mean()), 
+            step=0.01
+        )
+        age = st.slider(
+            "Age", 
+            18, 
+            75, 
+            int(X_train["Age"].mean())
+        )
+        open_lines = st.slider(
+            "Open Credit Lines", 
+            1, 
+            15, 
+            int(X_train["Open_Credit_Lines"].mean())
+        )
+        late_payments = st.slider(
+            "Late Payments", 
+            0, 
+            10, 
+            int(X_train["Late_Payments"].mean())
+        )
 
-            # GO / Submit Button
-            submit_button = st.form_submit_button(
-                label="🚀 Evaluate Profile (GO)",
-                type="primary",
-                use_container_width=True
-            )
+        active_data = {
+            "Credit_Score": credit_score,
+            "Annual_Income": annual_income,
+            "Debt_Ratio": debt_ratio,
+            "Age": age,
+            "Open_Credit_Lines": open_lines,
+            "Late_Payments": late_payments
+        }
 
-        # Recalculate and rerun on every GO click
-        if submit_button:
-            current_input = {
-                "Credit_Score": credit_score,
-                "Annual_Income": annual_income,
-                "Debt_Ratio": debt_ratio,
-                "Age": age,
-                "Open_Credit_Lines": open_lines,
-                "Late_Payments": late_payments
-            }
-            prob, base_value, contributions = engine.explain_instance(current_input)
-            
-            st.session_state["eval_results"] = {
-                "input_data": current_input,
-                "prob": prob,
-                "base_value": base_value,
-                "contributions": contributions
-            }
-            st.rerun()
+    # Live Inference & SHAP Calculation
+    prob, base_value, contributions = engine.explain_instance(active_data)
+    risk_pct = prob * 100
 
     with col_display:
         st.subheader("📊 Underwriting Decision & Attribution")
-
-        res = st.session_state["eval_results"]
-        prob = res["prob"]
-        base_value = res["base_value"]
-        contributions = res["contributions"]
-        active_data = res["input_data"]
-        risk_pct = prob * 100
 
         # Risk Status Tiering
         if risk_pct < 30:
@@ -302,7 +292,7 @@ if mode == "👤 Single Instance What-If":
     if "single_chat_history" not in st.session_state:
         st.session_state.single_chat_history = []
 
-    # Display history
+    # Display conversation history
     for msg in st.session_state.single_chat_history:
         st.chat_message(msg["role"]).write(msg["content"])
 
