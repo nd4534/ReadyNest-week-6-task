@@ -300,8 +300,12 @@ if mode == "👤 Single Instance What-If":
                 response_placeholder.markdown(full_response)
 
             except Exception as e:
-                full_response = f"⚠️ Error communicating with local Ollama: {str(e)}"
-                response_placeholder.error(full_response)
+                full_response = (
+                    "⚠️ **Copilot Unavailable on Cloud**: This dashboard is hosted on Streamlit Cloud, "
+                    "which does not host local LLM instances. To use the AI Copilot, please run the "
+                    "app locally with Ollama active (`ollama serve`), or configure a cloud LLM API key."
+                )
+                response_placeholder.warning(full_response)
 
         st.session_state.single_chat_history.append({"role": "assistant", "content": full_response})
 
