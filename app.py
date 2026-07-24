@@ -58,7 +58,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🔍 Explainable AI Studio + Live Risk Copilot")
+st.title("🔍 EWhat-If & Batch XAI Studio + Copilot")
 st.caption("Batch risk evaluation, interactive XAI assistant, future trend forecasting, and live file monitoring.")
 
 # Initialize Model & Engine
