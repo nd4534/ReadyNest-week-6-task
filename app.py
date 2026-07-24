@@ -433,12 +433,26 @@ else:
                 st.plotly_chart(fig_dist, use_container_width=True)
             
             with c2:
-                fig_scatter = px.scatter(
-                    batch_df, x="Credit_Score", y="Annual_Income", color="Risk_Category", size="Late_Payments",
-                    title="Credit Score vs Income by Risk Category",
-                    color_discrete_map=risk_color_map,
-                    category_orders={"Risk_Category": ["Low Risk", "Medium Risk", "High Risk"]}
+                # 1. Sample up to 5,000 records for fast, clean rendering on 100k datasets
+                scatter_sample_df = (
+                    batch_df.sample(n=5000, random_state=42)
+                    if len(batch_df) > 5000
+                    else batch_df
                 )
+
+                fig_scatter = px.scatter(
+                    scatter_sample_df,
+                    x="Credit_Score",
+                    y="Annual_Income",
+                    color="Risk_Category",
+                    size="Late_Payments",
+                    opacity=0.6,  # Allow underlying points to show through
+                    size_max=12,  # Cap bubble size so points don't blow up
+                    title="Credit Score vs Income by Risk Category (5k Sample)",
+                    color_discrete_map=risk_color_map,
+                    category_orders={"Risk_Category": ["High Risk", "Medium Risk", "Low Risk"]}  # Draw Low Risk on top!
+                )
+                fig_scatter.update_traces(marker=dict(line=dict(width=0.5, color='white')))
                 st.plotly_chart(fig_scatter, use_container_width=True)
 
             # 🔮 FUTURE PREDICTIONS & PROJECTIONS MODULE
