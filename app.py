@@ -381,12 +381,14 @@ else:
         if not all(col in batch_df.columns for col in required_cols):
             st.error(f"Uploaded CSV must contain required columns: {required_cols}")
         else:
-            # Batch Inference (Class 0 targeted for default/risk calculation)
-            probs = engine.model.predict_proba(batch_df[required_cols])[:, 0]
+            # Batch Inference: Target Class 1 (Default Risk)
+            probs = engine.model.predict_proba(batch_df[required_cols])[:, 1]
             batch_df["Predicted_Risk_Score"] = np.round(probs * 100, 2)
+            
+            # Adjusted Tiering Thresholds (<30% Low, 30-50% Medium, >50% High)
             batch_df["Risk_Category"] = pd.cut(
                 batch_df["Predicted_Risk_Score"], 
-                bins=[-1, 25, 50, 100], 
+                bins=[-1, 30, 50, 100], 
                 labels=["Low Risk", "Medium Risk", "High Risk"]
             )
 
@@ -399,12 +401,19 @@ else:
 
             st.markdown("---")
             
+            # Category Color Map for Plotly
+            risk_color_map = {
+                "Low Risk": "#00CC96",      # Green
+                "Medium Risk": "#FECB52",   # Orange/Yellow
+                "High Risk": "#EF553B"      # Red
+            }
+
             c1, c2 = st.columns(2)
             with c1:
                 fig_dist = px.histogram(
                     batch_df, x="Predicted_Risk_Score", color="Risk_Category",
                     title="Portfolio Risk Score Distribution",
-                    color_discrete_map={"Low Risk": "#636EFA", "Medium Risk": "#FECB52", "High Risk": "#EF553B"}
+                    color_discrete_map=risk_color_map
                 )
                 st.plotly_chart(fig_dist, use_container_width=True)
             
@@ -412,7 +421,7 @@ else:
                 fig_scatter = px.scatter(
                     batch_df, x="Credit_Score", y="Annual_Income", color="Risk_Category", size="Late_Payments",
                     title="Credit Score vs Income by Risk Category",
-                    color_discrete_map={"Low Risk": "#636EFA", "Medium Risk": "#FECB52", "High Risk": "#EF553B"}
+                    color_discrete_map=risk_color_map
                 )
                 st.plotly_chart(fig_scatter, use_container_width=True)
 
